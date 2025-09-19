@@ -9,31 +9,53 @@ import {
   EXPLOSION_TIMER,
   INITIAL_ENEMIES,
   ENEMY_MOVE_INTERVAL,
+  LEVEL_TIME,
+  INITIAL_PLAYER_STATS,
+  POWERUP_DROP_CHANCE
 } from './constants';
-import type { TileType, Position, Bomb, Enemy, GameState, FlyerParticle } from './types';
-import { TileType as TileEnum } from './types';
+import type { TileType, Position, Bomb, Enemy, GameState, FlyerParticle, GameOverReason, PowerUp, PlayerStats, FeedbackMessage } from './types';
+import { TileType as TileEnum, PowerUpType } from './types';
 
 const App: React.FC = () => {
   const [board, setBoard] = useState<TileType[][]>(LEVEL_1_MAP);
   const [playerPos, setPlayerPos] = useState<Position>(PLAYER_START_POS);
+  const [playerStats, setPlayerStats] = useState<PlayerStats>(INITIAL_PLAYER_STATS);
+  const [isPlayerGlowing, setIsPlayerGlowing] = useState(false);
   const [enemies, setEnemies] = useState<Enemy[]>(INITIAL_ENEMIES);
   const [bombs, setBombs] = useState<Bomb[]>([]);
   const [explosions, setExplosions] = useState<Position[]>([]);
+  const [powerUps, setPowerUps] = useState<PowerUp[]>([]);
   const [flyerParticles, setFlyerParticles] = useState<FlyerParticle[]>([]);
+  const [feedbackMessages, setFeedbackMessages] = useState<FeedbackMessage[]>([]);
   const [gameState, setGameState] = useState<GameState>('start');
   const [score, setScore] = useState(0);
   const [isShaking, setIsShaking] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(LEVEL_TIME);
+  const [gameOverReason, setGameOverReason] = useState<GameOverReason | null>(null);
 
   const resetGame = () => {
     setBoard(LEVEL_1_MAP.map(row => [...row]));
     setPlayerPos(PLAYER_START_POS);
+    setPlayerStats(INITIAL_PLAYER_STATS);
     setEnemies(INITIAL_ENEMIES);
     setBombs([]);
     setExplosions([]);
+    setPowerUps([]);
     setFlyerParticles([]);
+    setFeedbackMessages([]);
     setScore(0);
-    setGameState('playing');
+    setTimeLeft(LEVEL_TIME);
+    setGameOverReason(null);
+    setGameState('ready');
   };
+  
+  // Transition from ready to playing to prevent race conditions
+  useEffect(() => {
+    if (gameState === 'ready') {
+      const timer = setTimeout(() => setGameState('playing'), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [gameState]);
 
   const isWalkable = (pos: Position, currentBoard: TileType[][]) => {
     if (pos.x < 0 || pos.x >= BOARD_WIDTH || pos.y < 0 || pos.y >= BOARD_HEIGHT) {
@@ -54,15 +76,15 @@ const App: React.FC = () => {
       else if (e.key === 'ArrowRight') newPos.x += 1;
       else if (e.key === ' ') {
         e.preventDefault();
-        if (!bombs.some(b => b.position.x === prevPos.x && b.position.y === prevPos.y)) {
-          setBombs(prevBombs => [...prevBombs, { position: prevPos, timer: Date.now() + BOMB_TIMER, range: 2 }]);
+        if (bombs.length < playerStats.maxBombs && !bombs.some(b => b.position.x === prevPos.x && b.position.y === prevPos.y)) {
+          setBombs(prevBombs => [...prevBombs, { position: prevPos, timer: Date.now() + BOMB_TIMER, range: playerStats.bombRange }]);
         }
         return prevPos;
       }
 
       return isWalkable(newPos, board) ? newPos : prevPos;
     });
-  }, [gameState, board, bombs]);
+  }, [gameState, board, bombs, playerStats]);
 
   // Game loop for enemies
   useEffect(() => {
@@ -86,6 +108,23 @@ const App: React.FC = () => {
     return () => clearInterval(enemyInterval);
   }, [gameState, board]);
   
+  // Game Timer
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+
+    if (timeLeft <= 0) {
+      setGameState('gameOver');
+      setGameOverReason('timeUp');
+      return;
+    }
+
+    const timerId = setInterval(() => {
+      setTimeLeft(prev => prev - 1);
+    }, 1000);
+
+    return () => clearInterval(timerId);
+  }, [gameState, timeLeft]);
+
   // Bomb and explosion logic
   useEffect(() => {
     if (gameState !== 'playing') return;
@@ -96,6 +135,7 @@ const App: React.FC = () => {
         if (explodingBombs.length > 0) {
             let newExplosions: Position[] = [];
             let newBoard = [...board.map(row => [...row])];
+            let newPowerUps: PowerUp[] = [];
             
             explodingBombs.forEach(bomb => {
                 newExplosions.push(bomb.position);
@@ -114,6 +154,13 @@ const App: React.FC = () => {
                         if (tile === TileEnum.PARTITION) {
                             newBoard[pos.y][pos.x] = TileEnum.FLOOR;
                             setScore(s => s + 10);
+                            if (Math.random() < POWERUP_DROP_CHANCE) {
+                                const powerUpTypes = Object.values(PowerUpType).filter(v => !isNaN(Number(v))) as PowerUpType[];
+                                const randomType = powerUpTypes[Math.floor(Math.random() * powerUpTypes.length)];
+                                if (!powerUps.some(p => p.position.x === pos.x && p.position.y === pos.y)) {
+                                    newPowerUps.push({ position: pos, type: randomType });
+                                }
+                            }
                             break;
                         }
                     }
@@ -126,6 +173,9 @@ const App: React.FC = () => {
             }
 
             setExplosions(prev => [...prev, ...newExplosions]);
+            if (newPowerUps.length > 0) {
+                setPowerUps(prev => [...prev, ...newPowerUps]);
+            }
             
             const defeatedEnemies: Enemy[] = [];
             const nextEnemies = enemies.filter(enemy => {
@@ -137,7 +187,6 @@ const App: React.FC = () => {
                 return !isHit;
             });
             
-            // Create flyer particles for defeated enemies
             if (defeatedEnemies.length > 0) {
                 const newParticles: FlyerParticle[] = [];
                 defeatedEnemies.forEach(enemy => {
@@ -177,6 +226,7 @@ const App: React.FC = () => {
 
             if (newExplosions.some(exp => exp.x === playerPos.x && exp.y === playerPos.y)) {
                 setGameState('gameOver');
+                setGameOverReason('hit');
             } else if (nextEnemies.length === 0) {
                 setGameState('levelClear');
             }
@@ -192,14 +242,54 @@ const App: React.FC = () => {
     }, 100);
 
     return () => clearTimeout(bombTick);
-  }, [bombs, board, playerPos, enemies, gameState]);
+  }, [bombs, board, playerPos, enemies, gameState, powerUps]);
   
   // Player-enemy collision check
   useEffect(() => {
       if (gameState === 'playing' && enemies.some(e => e.position.x === playerPos.x && e.position.y === playerPos.y)) {
           setGameState('gameOver');
+          setGameOverReason('hit');
       }
   }, [playerPos, enemies, gameState]);
+  
+  // Player-powerup collision check
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+    const collectedPowerUp = powerUps.find(p => p.position.x === playerPos.x && p.position.y === playerPos.y);
+    if (collectedPowerUp) {
+      let message = '';
+      setPlayerStats(stats => {
+        const newStats = { ...stats };
+        switch (collectedPowerUp.type) {
+          case PowerUpType.Flame:
+            newStats.bombRange++;
+            message = '+1 Flame!';
+            break;
+          case PowerUpType.Bomb:
+            newStats.maxBombs++;
+            message = '+1 Bomb!';
+            break;
+          case PowerUpType.Speed:
+            newStats.speed = Math.max(0.05, stats.speed - 0.02);
+            message = 'Speed Up!';
+            break;
+        }
+        return newStats;
+      });
+      
+      const messageId = `feedback-${Date.now()}`;
+      setFeedbackMessages(prev => [...prev, {id: messageId, text: message, position: playerPos}]);
+      setTimeout(() => {
+        setFeedbackMessages(prev => prev.filter(m => m.id !== messageId));
+      }, 1500);
+
+      setIsPlayerGlowing(true);
+      setTimeout(() => setIsPlayerGlowing(false), 400);
+
+      setPowerUps(prev => prev.filter(p => p !== collectedPowerUp));
+    }
+  }, [playerPos, powerUps, gameState]);
+
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -215,6 +305,14 @@ const App: React.FC = () => {
       default: return 'floor';
     }
   };
+  
+  const getPowerUpIcon = (type: PowerUpType) => {
+    switch (type) {
+        case PowerUpType.Flame: return '🔥';
+        case PowerUpType.Bomb: return '💣';
+        case PowerUpType.Speed: return '👟';
+    }
+  }
 
   if (gameState === 'start') {
     return (
@@ -229,10 +327,16 @@ const App: React.FC = () => {
     );
   }
   
+  const getGameOverMessage = () => {
+    if (gameState === 'levelClear') return 'Level Clear!';
+    if (gameOverReason === 'timeUp') return "Time's Up!";
+    return 'Game Over';
+  };
+
   if (gameState === 'gameOver' || gameState === 'levelClear') {
       return (
          <div className="text-center">
-            <h1 className="text-5xl font-bold mb-4 text-cyan-400">{gameState === 'gameOver' ? 'Game Over' : 'Level Clear!'}</h1>
+            <h1 className="text-5xl font-bold mb-4 text-cyan-400">{getGameOverMessage()}</h1>
             <p className="text-2xl mb-6">Score: {score}</p>
             <button onClick={resetGame} className="px-8 py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg text-xl shadow-lg">
               もう一度プレイ (Play Again)
@@ -243,10 +347,18 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col items-center">
-        <div className="w-full flex justify-between items-center mb-4 px-2" style={{ width: BOARD_WIDTH * TILE_SIZE }}>
-            <h1 className="text-lg sm:text-xl font-bold text-cyan-400">Office Bomber</h1>
-            <div className="text-md sm:text-lg">Score: {score}</div>
-            <div className="text-md sm:text-lg">Enemies: {enemies.length}</div>
+        <div className="hud" style={{ width: BOARD_WIDTH * TILE_SIZE }}>
+            <div className="hud-item">
+                <div>Score:</div> <div className="hud-value">{score}</div>
+            </div>
+            <div className="hud-item stats">
+                <span>💣<span className="hud-value">{playerStats.maxBombs}</span></span>
+                <span>🔥<span className="hud-value">{playerStats.bombRange}</span></span>
+                <span>👟<span className="hud-value">{(1/playerStats.speed).toFixed(1)}</span></span>
+            </div>
+            <div className={`hud-item timer ${timeLeft <= 10 ? 'timer-warning' : ''}`}>
+                <div>Time:</div><div className="hud-value">{Math.floor(timeLeft / 60)}:{('0' + (timeLeft % 60)).slice(-2)}</div>
+            </div>
         </div>
       <div
         className={isShaking ? 'shake' : ''}
@@ -255,6 +367,8 @@ const App: React.FC = () => {
           gridTemplateColumns: `repeat(${BOARD_WIDTH}, ${TILE_SIZE}px)`,
           position: 'relative',
           width: BOARD_WIDTH * TILE_SIZE,
+          boxShadow: '0 0 20px rgba(0, 200, 255, 0.4)',
+          border: '2px solid rgba(0, 200, 255, 0.2)',
         }}
       >
         {board.map((row, y) =>
@@ -266,6 +380,25 @@ const App: React.FC = () => {
             />
           ))
         )}
+
+        {powerUps.map((powerUp, i) => (
+            <div key={`powerup-${i}`} className="powerup" style={{
+                position: 'absolute',
+                left: powerUp.position.x * TILE_SIZE,
+                top: powerUp.position.y * TILE_SIZE,
+                width: TILE_SIZE,
+                height: TILE_SIZE,
+                zIndex: 5
+            }}>
+                <div className={
+                    powerUp.type === PowerUpType.Flame ? 'powerup-flame' :
+                    powerUp.type === PowerUpType.Bomb ? 'powerup-bomb' : 'powerup-speed'
+                }>
+                    {getPowerUpIcon(powerUp.type)}
+                </div>
+            </div>
+        ))}
+
         <div
           className="character-container"
           style={{
@@ -274,11 +407,11 @@ const App: React.FC = () => {
             top: playerPos.y * TILE_SIZE,
             width: TILE_SIZE,
             height: TILE_SIZE,
-            transition: 'left 0.1s linear, top 0.1s linear',
+            transition: `left ${playerStats.speed}s linear, top ${playerStats.speed}s linear`,
             zIndex: 10,
           }}
         >
-          <div className="player">
+          <div className={`player ${isPlayerGlowing ? 'glow' : ''}`}>
             <div className="head" />
             <div className="body suit" />
             <div className="tie" />
@@ -309,22 +442,33 @@ const App: React.FC = () => {
             </div>
           </div>
         ))}
-        {bombs.map((bomb, i) => (
-          <div
-            key={`bomb-${i}`}
-            className="bomb"
-            style={{
-              position: 'absolute',
-              left: bomb.position.x * TILE_SIZE,
-              top: bomb.position.y * TILE_SIZE,
-              width: TILE_SIZE,
-              height: TILE_SIZE,
-              zIndex: 8,
-            }}
-          >
-            VIP
-          </div>
-        ))}
+        {bombs.map((bomb, i) => {
+          const timeRemaining = bomb.timer - Date.now();
+          const fusePercentage = (BOMB_TIMER - timeRemaining) / BOMB_TIMER;
+          let fuseClass = 'fuse-slow';
+          if (fusePercentage > 0.85) {
+            fuseClass = 'fuse-critical';
+          } else if (fusePercentage > 0.6) {
+            fuseClass = 'fuse-fast';
+          }
+          
+          return (
+            <div
+              key={`bomb-${i}`}
+              className={`bomb ${fuseClass}`}
+              style={{
+                position: 'absolute',
+                left: bomb.position.x * TILE_SIZE,
+                top: bomb.position.y * TILE_SIZE,
+                width: TILE_SIZE,
+                height: TILE_SIZE,
+                zIndex: 8,
+              }}
+            >
+              VIP
+            </div>
+          );
+        })}
         {explosions.map((pos, i) => (
            <div
             key={`exp-${i}`}
@@ -350,6 +494,14 @@ const App: React.FC = () => {
                 ...particle.style,
             }}
            />
+        ))}
+        {feedbackMessages.map(msg => (
+          <div key={msg.id} className="feedback-message" style={{
+            left: msg.position.x * TILE_SIZE,
+            top: msg.position.y * TILE_SIZE,
+          }}>
+            {msg.text}
+          </div>
         ))}
       </div>
     </div>
