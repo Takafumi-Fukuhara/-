@@ -1,4 +1,4 @@
-import { TileType, Enemy } from './types';
+import { TileType, Enemy, PlayerStats } from './types';
 
 export const TILE_SIZE = 40; // in pixels
 export const BOARD_WIDTH = 15;
@@ -8,33 +8,42 @@ export const PLAYER_START_POS = { x: 1, y: 1 };
 export const BOMB_TIMER = 3000; // 3 seconds
 export const EXPLOSION_TIMER = 500; // 0.5 seconds
 export const ENEMY_MOVE_INTERVAL = 1000; // 1 second
+export const LEVEL_TIME = 180; // 3 minutes
+
+export const INITIAL_PLAYER_STATS: PlayerStats = {
+  maxBombs: 1,
+  bombRange: 1,
+  speed: 0.1, // css transition duration
+};
+
+export const POWERUP_DROP_CHANCE = 0.3; // 30%
 
 const W = TileType.WALL;
 const F = TileType.FLOOR;
 const P = TileType.PARTITION;
 
-// New map where walls form the letters 'D' and 'X'
+// Classic Bomberman-style Map Layout
 export const LEVEL_1_MAP: TileType[][] = [
-    [W,W,W,W,W,W,W,W,W,W,W,W,W,W,W], // 0
-    [W,F,P,F,P,F,P,F,P,F,P,F,P,F,W], // 1
-    [W,P,W,W,W,F,P,F,W,F,W,P,F,P,W], // 2
-    [W,F,W,F,F,W,P,F,F,W,F,W,P,F,W], // 3
-    [W,P,W,F,F,W,P,F,F,F,W,F,P,F,W], // 4
-    [W,F,W,F,F,W,P,F,F,W,F,W,P,F,W], // 5
-    [W,P,W,W,W,F,P,F,W,F,W,P,F,P,W], // 6
-    [W,F,P,F,P,F,P,F,P,F,P,F,P,F,W], // 7
-    [W,P,P,P,P,P,P,P,P,P,P,P,P,P,W], // 8
-    [W,F,P,F,P,F,P,F,P,F,P,F,P,F,W], // 9
-    [W,P,P,P,P,P,P,P,P,P,P,P,P,P,W], // 10
-    [W,F,P,F,P,F,P,F,P,F,P,F,P,F,W], // 11
-    [W,W,W,W,W,W,W,W,W,W,W,W,W,W,W], // 12
+    [W,W,W,W,W,W,W,W,W,W,W,W,W,W,W],
+    [W,F,F,P,P,P,P,P,P,P,P,P,F,F,W],
+    [W,F,W,P,W,P,W,P,W,P,W,P,W,F,W],
+    [W,P,P,P,P,P,P,P,P,P,P,P,P,P,W],
+    [W,P,W,P,W,P,W,P,W,P,W,P,W,P,W],
+    [W,P,P,P,P,P,F,F,F,P,P,P,P,P,W],
+    [W,F,W,P,W,P,F,F,F,P,W,P,W,F,W],
+    [W,P,P,P,P,P,F,F,F,P,P,P,P,P,W],
+    [W,P,W,P,W,P,W,P,W,P,W,P,W,P,W],
+    [W,P,P,P,P,P,P,P,P,P,P,P,P,P,W],
+    [W,F,W,P,W,P,W,P,W,P,W,P,W,F,W],
+    [W,F,F,P,P,P,P,P,P,P,P,P,F,F,W],
+    [W,W,W,W,W,W,W,W,W,W,W,W,W,W,W],
 ];
 
 
 export const INITIAL_ENEMIES: Enemy[] = [
   { id: 1, position: { x: 13, y: 1 } },
   { id: 2, position: { x: 1, y: 11 } },
-  { id: 3, position: { x: 7, y: 4 } },
+  { id: 3, position: { x: 7, y: 5 } },
   { id: 4, position: { x: 13, y: 11 } },
 ];
 
