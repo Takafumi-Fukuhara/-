@@ -4,6 +4,12 @@ export enum TileType {
   PARTITION, // Destructible wall
 }
 
+export enum PowerUpType {
+  Flame,
+  Bomb,
+  Speed,
+}
+
 export interface Position {
   x: number;
   y: number;
@@ -20,13 +26,32 @@ export interface Enemy {
   position: Position;
 }
 
+export interface PowerUp {
+  position: Position;
+  type: PowerUpType;
+}
+
 export interface FlyerParticle {
   id: string;
   pos: Position;
   style: React.CSSProperties;
 }
 
-export type GameState = 'start' | 'playing' | 'gameOver' | 'levelClear';
+export interface FeedbackMessage {
+  id: string;
+  text: string;
+  position: Position;
+}
+
+export interface PlayerStats {
+  maxBombs: number;
+  bombRange: number;
+  speed: number; // transition duration in seconds
+}
+
+export type GameState = 'start' | 'ready' | 'playing' | 'gameOver' | 'levelClear';
+
+export type GameOverReason = 'hit' | 'timeUp';
 
 // Fix: Add and export the IconName type, which is used by several components.
 export type IconName = 'player' | 'bomb' | 'enemy' | 'item' | 'stage' | 'vip';
